@@ -49,7 +49,7 @@ exports.handler = async (event) => {
 
     if (!geminiRes.ok) {
       const errText = await geminiRes.text();
-      return { statusCode: 200, headers, body: JSON.stringify({ reply: "Gemini API error: " + geminiRes.status + " - " + errText.slice(0, 200) }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ reply: "Gemini API error: " + geminiRes.status + " - " + errText }) };
     }
 
     const geminiData = await geminiRes.json();
