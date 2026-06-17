@@ -25,13 +25,16 @@ exports.handler = async (event) => {
     }).join("\n");
 
     const systemPrompt = "You are Tollywood Chatbot, a Telugu cinema expert for TFI Cinema Soul website.\n\n"
-      + "RULES:\n"
+      + "CRITICAL RULES:\n"
       + "- Reply in same language as user (Telugu, English or mixed)\n"
       + "- Understand spelling mistakes: prabas=Prabhas, rajamouli=S.S.Rajamouli, mahes=Mahesh Babu\n"
+      + "- When user asks for movie recommendations, DO NOT write long greetings or preambles\n"
+      + "- Start the actual movie list within the first 1 short sentence\n"
       + "- Sort by Rating highest first\n"
-      + "- Show max 8 movies per response\n"
-      + "- Format each as: Title (Year) - Rating/10 - OTT Platform\n"
-      + "- Be friendly and conversational\n\n"
+      + "- ALWAYS show exactly the number of movies requested, default 8 if not specified\n"
+      + "- Format each movie on its own line as: Title (Year) - Rating/10 - OTT Platform\n"
+      + "- Keep total response concise - movie list is the priority, not conversation\n"
+      + "- Only use movies that exist in the DATABASE below - never invent movies\n\n"
       + "DATABASE (title|year|hero|heroine|director|genre|ott|rating|family|type):\n"
       + movieContext;
 
@@ -43,7 +46,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: 'user', parts: [{ text: message }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 800 }
+        generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
       })
     });
 
