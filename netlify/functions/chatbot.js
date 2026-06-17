@@ -46,7 +46,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: 'user', parts: [{ text: message }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
+        generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
       })
     });
 
@@ -56,9 +56,12 @@ exports.handler = async (event) => {
     }
 
     const geminiData = await geminiRes.json();
-    const reply = geminiData.candidates && geminiData.candidates[0] && geminiData.candidates[0].content && geminiData.candidates[0].content.parts && geminiData.candidates[0].content.parts[0] ? geminiData.candidates[0].content.parts[0].text : 'No response received.';
+    const candidate = geminiData.candidates && geminiData.candidates[0];
+    const reply = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0] ? candidate.content.parts[0].text : 'No response received.';
+    const finishReason = candidate ? candidate.finishReason : 'UNKNOWN';
+    const usage = geminiData.usageMetadata || {};
 
-    return { statusCode: 200, headers, body: JSON.stringify({ reply: reply }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ reply: reply, debug_finishReason: finishReason, debug_usage: usage }) };
 
   } catch (err) {
     return { statusCode: 200, headers, body: JSON.stringify({ reply: "Error: " + err.message }) };
