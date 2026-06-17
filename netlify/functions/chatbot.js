@@ -152,12 +152,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({
-        reply: reply,
-        debug_filters: filters,
-        debug_moviesFound: finalMovies.length,
-        debug_usage: answerData.usageMetadata || {}
-      })
+      body: JSON.stringify({ reply: reply })
     };
 
   } catch (err) {
