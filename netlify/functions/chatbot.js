@@ -29,48 +29,106 @@ exports.handler = async (event) => {
     const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + GEMINI_KEY;
 
     // ───────────────────────────────────────────────────────────
-    // STEP 1: Ask Gemini to extract structured search filters
-    // from the user's question (handles any language/spelling)
+    // STEP 1: Extract filters using LOCAL keyword matching
+    // (no Gemini API call needed - saves 50% of API quota)
     // ───────────────────────────────────────────────────────────
-    const extractPrompt = "You are a search filter extractor for a Telugu movie database.\n"
-      + "Read the user's question (it may be in Telugu, English, mixed, or have spelling mistakes)\n"
-      + "and output ONLY a JSON object with these fields (omit fields that don't apply):\n"
-      + "{\n"
-      + '  "genre": "string or null - e.g. Thriller, Action, Comedy, Romance, Horror, Drama",\n'
-      + '  "hero": "string or null - corrected actor name, e.g. Prabhas, Mahesh Babu, Jr NTR",\n'
-      + '  "heroine": "string or null - corrected actress name",\n'
-      + '  "director": "string or null - corrected director name",\n'
-      + '  "ott_platform": "string or null - one of: Aha, Prime Video, Netflix, Sun NXT, ZEE5, SonyLIV",\n'
-      + '  "year": "number or null - specific year if mentioned",\n'
-      + '  "type": "string or null - Movie or Series",\n'
-      + '  "family_watch": "string or null - Yes or No, only if explicitly asked for family-friendly",\n'
-      + '  "limit": "number - how many results user wants, default 8"\n'
-      + "}\n"
-      + "Fix spelling mistakes silently (prabas->Prabhas, rajamouli->S.S.Rajamouli, mahes->Mahesh Babu, etc).\n"
-      + "Output ONLY the raw JSON object, no markdown, no explanation.\n\n"
-      + "User question: " + message;
+    const msgLower = message.toLowerCase();
 
-    const extractRes = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: extractPrompt }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 300 }
-      })
-    });
+    // Known actors/actresses with common spelling variations
+    const HERO_ALIASES = {
+      'prabhas': ['prabhas', 'prabas', 'prabhash', 'prabhaas'],
+      'mahesh babu': ['mahesh babu', 'mahesh', 'mahes', 'maheshbabu', 'mahesbabu'],
+      'pawan kalyan': ['pawan kalyan', 'pawan', 'powan kalyan', 'pavan kalyan'],
+      'jr ntr': ['jr ntr', 'jr.ntr', 'ntr jr', 'tarak', 'ntr'],
+      'allu arjun': ['allu arjun', 'aluarjun', 'bunny', 'allu arju'],
+      'ram charan': ['ram charan', 'ramcharan', 'cherry'],
+      'chiranjeevi': ['chiranjeevi', 'chiranjeevy', 'chiru'],
+      'vijay deverakonda': ['vijay deverakonda', 'vijay devarakonda', 'rowdy vijay'],
+      'nani': ['nani'],
+      'ravi teja': ['ravi teja', 'raviteja', 'ravithez'],
+      'nagarjuna': ['nagarjuna', 'nag'],
+      'venkatesh': ['venkatesh', 'venky'],
+      'balakrishna': ['balakrishna', 'balayya', 'bala krishna'],
+      'sai dharam tej': ['sai dharam tej', 'saidharam'],
+      'nithiin': ['nithiin', 'nithin'],
+      'sharwanand': ['sharwanand', 'sharwa'],
+      'vishwak sen': ['vishwak sen', 'vishwaksen'],
+      'sudheer babu': ['sudheer babu', 'sudheerbabu'],
+      'ram pothineni': ['ram pothineni', 'rampo'],
+      'adivi sesh': ['adivi sesh', 'adivisesh'],
+    };
 
-    let filters = {};
-    if (extractRes.ok) {
-      const extractData = await extractRes.json();
-      let extractText = extractData.candidates && extractData.candidates[0] && extractData.candidates[0].content
-        ? extractData.candidates[0].content.parts[0].text : '{}';
-      // Clean up potential markdown code fences
-      extractText = extractText.replace(/```json/g, '').replace(/```/g, '').trim();
-      try {
-        filters = JSON.parse(extractText);
-      } catch (e) {
-        filters = {};
+    const GENRE_KEYWORDS = {
+      'thriller': ['thriller', 'thrillers', 'thrilling'],
+      'action': ['action'],
+      'comedy': ['comedy', 'comedies', 'funny'],
+      'romance': ['romance', 'romantic', 'love story', 'love stories'],
+      'horror': ['horror', 'scary', 'ghost'],
+      'drama': ['drama', 'dramas'],
+      'family': ['family drama', 'family movie'],
+      'crime': ['crime'],
+      'mystery': ['mystery', 'mysteries'],
+      'fantasy': ['fantasy'],
+      'biography': ['biography', 'biopic'],
+      'sports': ['sports', 'sport'],
+    };
+
+    const OTT_KEYWORDS = {
+      'Aha': ['aha'],
+      'Prime Video': ['prime video', 'prime', 'amazon prime', 'amazon'],
+      'Netflix': ['netflix'],
+      'Sun NXT': ['sun nxt', 'sunnxt', 'sun next'],
+      'ZEE5': ['zee5', 'zee 5'],
+      'SonyLIV': ['sonyliv', 'sony liv', 'sony'],
+    };
+
+    let filters = { limit: 8 };
+
+    // Match hero
+    for (const [canonical, aliases] of Object.entries(HERO_ALIASES)) {
+      if (aliases.some(a => msgLower.includes(a))) {
+        filters.hero = canonical;
+        break;
       }
+    }
+
+    // Match genre
+    for (const [canonical, aliases] of Object.entries(GENRE_KEYWORDS)) {
+      if (aliases.some(a => msgLower.includes(a))) {
+        filters.genre = canonical;
+        break;
+      }
+    }
+
+    // Match OTT platform
+    for (const [canonical, aliases] of Object.entries(OTT_KEYWORDS)) {
+      if (aliases.some(a => msgLower.includes(a))) {
+        filters.ott_platform = canonical;
+        break;
+      }
+    }
+
+    // Match year (4-digit number between 1950-2026)
+    const yearMatch = message.match(/\b(19[5-9]\d|20[0-2]\d)\b/);
+    if (yearMatch) filters.year = parseInt(yearMatch[0]);
+
+    // Match family-friendly intent
+    if (msgLower.includes('family') && (msgLower.includes('watch') || msgLower.includes('movie') || msgLower.includes('ga'))) {
+      filters.family_watch = 'Yes';
+    }
+
+    // Match series vs movie intent
+    if (msgLower.includes('series') || msgLower.includes('web series')) {
+      filters.type = 'Series';
+    } else if (msgLower.includes('movie') && !msgLower.includes('series')) {
+      filters.type = 'Movie';
+    }
+
+    // Match a requested count, e.g. "top 5", "best 10"
+    const limitMatch = msgLower.match(/(?:top|best)\s*(\d+)/);
+    if (limitMatch) {
+      const n = parseInt(limitMatch[1]);
+      if (n > 0 && n <= 30) filters.limit = n;
     }
 
     // ───────────────────────────────────────────────────────────
@@ -90,8 +148,8 @@ exports.handler = async (event) => {
     if (filters.type) query = query.ilike('type', filters.type);
     if (filters.family_watch) query = query.ilike('family_watch', filters.family_watch);
 
-    const resultLimit = (filters.limit && filters.limit > 0 && filters.limit <= 30) ? filters.limit : 8;
-    query = query.limit(Math.max(resultLimit * 3, 30)); // fetch a bit extra in case Gemini wants to pick best ones
+    const resultLimit = filters.limit || 8;
+    query = query.limit(Math.max(resultLimit * 3, 30));
 
     const { data: movies, error } = await query;
 
@@ -99,9 +157,10 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers, body: JSON.stringify({ reply: 'Database error: ' + error.message }) };
     }
 
-    // Fallback: if no filters matched anything specific, do a broader search
     let finalMovies = movies;
+    let usedFallback = false;
     if (!finalMovies || finalMovies.length === 0) {
+      usedFallback = true;
       const { data: fallbackMovies } = await supabase
         .from('movies')
         .select('title, year, director, hero, heroine, genre, ott_platform, rating, family_watch, type, website_link')
@@ -111,21 +170,27 @@ exports.handler = async (event) => {
     }
 
     // ───────────────────────────────────────────────────────────
-    // STEP 3: Send ONLY the filtered movies to Gemini for final answer
+    // STEP 3: Single Gemini call - understands language/spelling
+    // AND writes the final answer using the filtered movie list
     // ───────────────────────────────────────────────────────────
     const movieContext = finalMovies.map(function(m) {
       return m.title + "|" + m.year + "|" + m.hero + "|" + m.heroine + "|" + m.director + "|" + m.genre + "|" + m.ott_platform + "|" + m.rating + "|" + m.family_watch + "|" + m.type;
     }).join('\n');
 
+    const fallbackNote = usedFallback
+      ? "\nNOTE: No exact filter match was found locally, so this is a general top-rated list. If the user's question seems to need a more specific match than what's below, politely say TFI Cinema Soul's database doesn't have an exact match, while still being helpful with what's shown.\n"
+      : "";
+
     const answerPrompt = "You are Tollywood Chatbot, a Telugu cinema expert for TFI Cinema Soul website.\n\n"
       + "RULES:\n"
+      + "- Understand the user's question even with spelling mistakes or Telugu/English mixed language\n"
       + "- Reply in same language as user (Telugu, English or mixed)\n"
       + "- Do NOT write long greetings - start the movie list within 1 short sentence\n"
       + "- Sort by Rating highest first\n"
       + "- Show up to " + resultLimit + " movies\n"
       + "- Format each movie on its own line as: Title (Year) - Rating/10 - OTT Platform\n"
       + "- Only use movies from the DATABASE below - never invent movies\n"
-      + "- If the database below is empty or irrelevant to the question, politely say you couldn't find a match in TFI Cinema Soul's database\n\n"
+      + fallbackNote + "\n"
       + "DATABASE (title|year|hero|heroine|director|genre|ott|rating|family|type):\n"
       + movieContext + "\n\n"
       + "User question: " + message;
@@ -149,11 +214,7 @@ exports.handler = async (event) => {
     const reply = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0]
       ? candidate.content.parts[0].text : 'No response received.';
 
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({ reply: reply })
-    };
+    return { statusCode: 200, headers, body: JSON.stringify({ reply: reply }) };
 
   } catch (err) {
     return { statusCode: 200, headers, body: JSON.stringify({ reply: 'Error: ' + err.message }) };
