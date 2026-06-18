@@ -157,7 +157,33 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers, body: JSON.stringify({ reply: 'Database error: ' + error.message }) };
     }
 
-    let finalMovies = movies;
+    // Precise word-boundary filter to remove false positives
+    // e.g. searching "Prabhas" should not match "Sumanth Prabhas"
+    function normalizeName(s) {
+      return s.toLowerCase().replace(/[.,]/g, '').trim().split(/\s+/);
+    }
+    function isPreciseNameMatch(fieldValue, searchName) {
+      if (!fieldValue || !searchName) return true;
+      var fvWords = normalizeName(fieldValue);
+      var snWords = normalizeName(searchName);
+      if (fvWords.length !== snWords.length) return false;
+      for (var i = 0; i < fvWords.length; i++) {
+        if (fvWords[i] !== snWords[i]) return false;
+      }
+      return true;
+    }
+
+    var movies2 = movies;
+    if (filters.hero && movies2) {
+      var exactMatches = movies2.filter(function(m) { return isPreciseNameMatch(m.hero, filters.hero); });
+      if (exactMatches.length > 0) movies2 = exactMatches;
+    }
+    if (filters.heroine && movies2) {
+      var exactMatchesH = movies2.filter(function(m) { return isPreciseNameMatch(m.heroine, filters.heroine); });
+      if (exactMatchesH.length > 0) movies2 = exactMatchesH;
+    }
+
+    let finalMovies = movies2;
     let usedFallback = false;
     if (!finalMovies || finalMovies.length === 0) {
       usedFallback = true;
