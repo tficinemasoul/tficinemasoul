@@ -234,6 +234,7 @@ const PC={};
 let cF='all',cO=null,cS='',cSo='def';
 
 function gs(gc){return`background:linear-gradient(160deg,#${gc[0]} 0%,#${gc[1]} 55%,#${gc[2]} 100%)`}
+function personSlug(name){return String(name).toLowerCase().replace(/[^a-z0-9\s]/g,'').trim().replace(/\s+/g,'-')}
 
 /* ── TMDB poster fetch ─────────────────────────────────────────────────── */
 async function getPoster(title,year,isTV){
@@ -343,9 +344,9 @@ async function openModal(m){
   document.getElementById('MOV').textContent=m.ov||'Overview not available.';
   const fw=m.fw==='Yes';
   document.getElementById('MDT').innerHTML=`
-    <div class="di"><div class="dl">Director</div><div class="dv">${m.d}</div></div>
-    <div class="di"><div class="dl">Hero</div><div class="dv">${m.h}</div></div>
-    <div class="di"><div class="dl">Heroine</div><div class="dv">${m.hr}</div></div>
+    <div class="di"><div class="dl">Director</div><div class="dv"><a href="/actor/${personSlug(m.d)}" style="color:#fff">${m.d}</a></div></div>
+    <div class="di"><div class="dl">Hero</div><div class="dv"><a href="/actor/${personSlug(m.h)}" style="color:#fff">${m.h}</a></div></div>
+    <div class="di"><div class="dl">Heroine</div><div class="dv"><a href="/actor/${personSlug(m.hr)}" style="color:#fff">${m.hr}</a></div></div>
     <div class="di"><div class="dl">Family Watch</div><div class="dv" style="color:${fw?'#4ade80':'#f87171'}">${fw?'✅ Yes':'🔞 No'}</div></div>`;
   document.getElementById('BD').classList.add('open');
   document.body.style.overflow='hidden';
