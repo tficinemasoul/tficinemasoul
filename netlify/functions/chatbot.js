@@ -29,12 +29,10 @@ exports.handler = async (event) => {
     const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + GEMINI_KEY;
 
     // ───────────────────────────────────────────────────────────
-    // STEP 1: Extract filters using LOCAL keyword matching
-    // (no Gemini API call needed - saves 50% of API quota)
+    // STEP 1: Try LOCAL keyword matching first (no API call)
     // ───────────────────────────────────────────────────────────
     const msgLower = message.toLowerCase();
 
-    // Known actors/actresses with common spelling variations
     const HERO_ALIASES = {
       'prabhas': ['prabhas', 'prabas', 'prabhash', 'prabhaas'],
       'mahesh babu': ['mahesh babu', 'mahesh', 'mahes', 'maheshbabu', 'mahesbabu'],
@@ -84,7 +82,6 @@ exports.handler = async (event) => {
 
     let filters = { limit: 8 };
 
-    // Match hero
     for (const [canonical, aliases] of Object.entries(HERO_ALIASES)) {
       if (aliases.some(a => msgLower.includes(a))) {
         filters.hero = canonical;
@@ -92,7 +89,6 @@ exports.handler = async (event) => {
       }
     }
 
-    // Match genre
     for (const [canonical, aliases] of Object.entries(GENRE_KEYWORDS)) {
       if (aliases.some(a => msgLower.includes(a))) {
         filters.genre = canonical;
@@ -100,7 +96,6 @@ exports.handler = async (event) => {
       }
     }
 
-    // Match OTT platform
     for (const [canonical, aliases] of Object.entries(OTT_KEYWORDS)) {
       if (aliases.some(a => msgLower.includes(a))) {
         filters.ott_platform = canonical;
@@ -108,27 +103,84 @@ exports.handler = async (event) => {
       }
     }
 
-    // Match year (4-digit number between 1950-2026)
     const yearMatch = message.match(/\b(19[5-9]\d|20[0-2]\d)\b/);
     if (yearMatch) filters.year = parseInt(yearMatch[0]);
 
-    // Match family-friendly intent
     if (msgLower.includes('family') && (msgLower.includes('watch') || msgLower.includes('movie') || msgLower.includes('ga'))) {
       filters.family_watch = 'Yes';
     }
 
-    // Match series vs movie intent
     if (msgLower.includes('series') || msgLower.includes('web series')) {
       filters.type = 'Series';
     } else if (msgLower.includes('movie') && !msgLower.includes('series')) {
       filters.type = 'Movie';
     }
 
-    // Match a requested count, e.g. "top 5", "best 10"
     const limitMatch = msgLower.match(/(?:top|best)\s*(\d+)/);
     if (limitMatch) {
       const n = parseInt(limitMatch[1]);
       if (n > 0 && n <= 30) filters.limit = n;
+    }
+
+    // ───────────────────────────────────────────────────────────
+    // STEP 1b: Detect if the message LIKELY mentions a person's name
+    // that our alias list failed to catch. If so, and only then,
+    // use one small Gemini call to identify it correctly.
+    // ───────────────────────────────────────────────────────────
+    // Heuristic: message contains a word with capital letter pattern,
+    // OR contains generic person-indicating words, but no hero/heroine/
+    // director was matched locally yet.
+    const STOPWORDS = ['best','top','good','nice','movies','movie','series','show',
+      'shows','on','in','the','a','an','is','are','of','for','to','me','my',
+      'please','give','show','tell','list','want','recommend','suggest',
+      'family','watch','telugu','film','films','aha','prime','netflix',
+      'sun','nxt','zee5','sonyliv','2024','2025','2023','2022','2021','2020',
+      'thriller','thrillers','thrilling','action','comedy','comedies','funny',
+      'romance','romantic','love','story','stories','horror','scary','ghost',
+      'drama','dramas','crime','mystery','mysteries','fantasy','biography',
+      'biopic','sports','sport','rated','rating','ratings','recommend',
+      'recommendation','recommendations','suggestion','suggestions'];
+
+    const words = msgLower.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean);
+    const unknownWords = words.filter(w => w.length > 3 && !STOPWORDS.includes(w));
+
+    const noNameMatchedYet = !filters.hero && !filters.heroine && !filters.director;
+    const looksLikeNameMightBePresent = unknownWords.length > 0 && noNameMatchedYet;
+
+    if (looksLikeNameMightBePresent) {
+      // Small, cheap Gemini call - ONLY to identify a likely actor/director name
+      const nameCheckPrompt = "A user is searching a Telugu movie database. Their message might contain "
+        + "a misspelled actor, actress, or director name that doesn't match common spellings.\n"
+        + "Message: \"" + message + "\"\n\n"
+        + "If the message contains a person's name (even misspelled), respond with ONLY that corrected "
+        + "full name in lowercase (e.g. \"nithiin\" or \"jr ntr\" or \"trivikram srinivas\").\n"
+        + "If there is NO person's name in the message, respond with exactly: none\n"
+        + "Respond with nothing else - just the name or the word none.";
+
+      try {
+        const nameCheckRes = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: nameCheckPrompt }] }],
+            generationConfig: { temperature: 0, maxOutputTokens: 30 }
+          })
+        });
+
+        if (nameCheckRes.ok) {
+          const nameCheckData = await nameCheckRes.json();
+          const nameCandidate = nameCheckData.candidates && nameCheckData.candidates[0] && nameCheckData.candidates[0].content
+            ? nameCheckData.candidates[0].content.parts[0].text.trim().toLowerCase().replace(/[."]/g, '')
+            : 'none';
+
+          if (nameCandidate && nameCandidate !== 'none' && nameCandidate.length > 2) {
+            // We don't know if it's hero, heroine, or director - try hero first (most common ask)
+            filters.hero = nameCandidate;
+          }
+        }
+      } catch (e) {
+        // If this extra check fails for any reason, just continue without it
+      }
     }
 
     // ───────────────────────────────────────────────────────────
@@ -174,7 +226,9 @@ exports.handler = async (event) => {
     }
 
     var movies2 = movies;
+    var hadHeroResultsBeforeStrictFilter = false;
     if (filters.hero && movies2) {
+      hadHeroResultsBeforeStrictFilter = movies2.length > 0;
       var exactMatches = movies2.filter(function(m) { return isPreciseNameMatch(m.hero, filters.hero); });
       if (exactMatches.length > 0) movies2 = exactMatches;
     }
@@ -185,6 +239,21 @@ exports.handler = async (event) => {
 
     let finalMovies = movies2;
     let usedFallback = false;
+
+    // If our Gemini-identified name still found nothing, try heroine field too before giving up
+    if ((!finalMovies || finalMovies.length === 0) && filters.hero) {
+      const { data: heroineTry } = await supabase
+        .from('movies')
+        .select('title, year, director, hero, heroine, genre, ott_platform, rating, family_watch, type, website_link')
+        .ilike('heroine', '%' + filters.hero + '%')
+        .order('rating', { ascending: false })
+        .limit(30);
+      if (heroineTry && heroineTry.length > 0) {
+        finalMovies = heroineTry.filter(function(m) { return isPreciseNameMatch(m.heroine, filters.hero); });
+        if (finalMovies.length === 0) finalMovies = heroineTry;
+      }
+    }
+
     if (!finalMovies || finalMovies.length === 0) {
       usedFallback = true;
       const { data: fallbackMovies } = await supabase
@@ -196,15 +265,14 @@ exports.handler = async (event) => {
     }
 
     // ───────────────────────────────────────────────────────────
-    // STEP 3: Single Gemini call - understands language/spelling
-    // AND writes the final answer using the filtered movie list
+    // STEP 3: Single final Gemini call - writes the answer
     // ───────────────────────────────────────────────────────────
     const movieContext = finalMovies.map(function(m) {
       return m.title + "|" + m.year + "|" + m.hero + "|" + m.heroine + "|" + m.director + "|" + m.genre + "|" + m.ott_platform + "|" + m.rating + "|" + m.family_watch + "|" + m.type;
     }).join('\n');
 
     const fallbackNote = usedFallback
-      ? "\nNOTE: No exact filter match was found locally, so this is a general top-rated list. If the user's question seems to need a more specific match than what's below, politely say TFI Cinema Soul's database doesn't have an exact match, while still being helpful with what's shown.\n"
+      ? "\nNOTE: No exact filter match was found, so this is a general top-rated list. If the user's question seems to need a more specific match than what's below, politely say TFI Cinema Soul's database doesn't have an exact match, while still being helpful with what's shown.\n"
       : "";
 
     const answerPrompt = "You are Tollywood Chatbot, a Telugu cinema expert for TFI Cinema Soul website.\n\n"
