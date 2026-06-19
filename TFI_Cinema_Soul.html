@@ -132,16 +132,20 @@ footer span{color:var(--gold)}
   .mh{height:200px}.mhl{font-size:8rem}.mtt{font-size:1.15rem}
   .mb,.mw{padding:.9rem 1.1rem}
   .watch-btn{min-width:auto;width:100%}
-.carousel-section{padding:1.4rem 2rem 0;max-width:1600px;margin:0 auto}
-.carousel-label{font-size:.95rem;font-weight:700;color:#fff;margin-bottom:.9rem;display:flex;align-items:center;gap:.5rem}
-.carousel-label .badge-new{background:linear-gradient(135deg,#F5C518,#E6A817);color:#000;font-size:.62rem;font-weight:800;padding:2px 8px;border-radius:50px;letter-spacing:.04em}
-.carousel-track{display:flex;gap:1rem;overflow-x:auto;padding-bottom:1.3rem;scroll-snap-type:x proximate;-webkit-overflow-scrolling:touch}
-.carousel-track .card{flex:0 0 168px;scroll-snap-align:start}
-.carousel-track .poster{height:235px}
+.carousel-section{padding:1.2rem 2rem 0;max-width:1600px;margin:0 auto}
+.carousel-label{font-size:.85rem;font-weight:700;color:#fff;margin-bottom:.7rem;display:flex;align-items:center;gap:.5rem}
+.carousel-label .badge-new{background:linear-gradient(135deg,#F5C518,#E6A817);color:#000;font-size:.6rem;font-weight:800;padding:2px 7px;border-radius:50px;letter-spacing:.04em}
+.carousel-track{display:flex;gap:.8rem;overflow-x:auto;padding-bottom:1rem;scroll-snap-type:x proximate;-webkit-overflow-scrolling:touch}
+.carousel-track .card{flex:0 0 120px;scroll-snap-align:start}
+.carousel-track .poster{height:170px}
+.carousel-track .cbody{padding:.5rem .55rem}
+.carousel-track .ct{font-size:.74rem;-webkit-line-clamp:1}
+.carousel-track .ch{display:none}
+.carousel-track .cottag{font-size:.6rem;padding:1px 6px}
 @media(max-width:580px){
-  .carousel-section{padding:1rem 1rem 0}
-  .carousel-track .card{flex:0 0 130px}
-  .carousel-track .poster{height:185px}
+  .carousel-section{padding:.9rem 1rem 0}
+  .carousel-track .card{flex:0 0 100px}
+  .carousel-track .poster{height:142px}
 }
 </style>
 </head>
@@ -171,11 +175,6 @@ footer span{color:var(--gold)}
 <div class="carousel-section">
   <div class="carousel-label">🔥 Trending Now <span class="badge-new">LIVE</span></div>
   <div class="carousel-track" id="POPCAR"></div>
-</div>
-
-<div class="carousel-section">
-  <div class="carousel-label">🆕 Latest Releases <span class="badge-new">NEW</span></div>
-  <div class="carousel-track" id="NEWCAR"></div>
 </div>
 
 <div class="filters">
@@ -462,10 +461,6 @@ async function loadTrendingCarousel(){
   renderCarousel('POPCAR', trending);
 }
 loadTrendingCarousel();
-
-// Latest Releases: most recent titles by year
-const latestMovies = [...M].filter(m=>m.y>0).sort((a,b)=>b.y-a.y).slice(0,15);
-renderCarousel('NEWCAR', latestMovies);
 
 function render(movies){
   const gr=document.getElementById('GR'),em=document.getElementById('EM');
