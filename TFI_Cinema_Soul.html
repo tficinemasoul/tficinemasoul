@@ -132,6 +132,16 @@ footer span{color:var(--gold)}
   .mh{height:200px}.mhl{font-size:8rem}.mtt{font-size:1.15rem}
   .mb,.mw{padding:.9rem 1.1rem}
   .watch-btn{min-width:auto;width:100%}
+.carousel-section{padding:1.4rem 2rem 0;max-width:1600px;margin:0 auto}
+.carousel-label{font-size:.95rem;font-weight:700;color:#fff;margin-bottom:.9rem;display:flex;align-items:center;gap:.5rem}
+.carousel-label .badge-new{background:linear-gradient(135deg,#F5C518,#E6A817);color:#000;font-size:.62rem;font-weight:800;padding:2px 8px;border-radius:50px;letter-spacing:.04em}
+.carousel-track{display:flex;gap:1rem;overflow-x:auto;padding-bottom:1.3rem;scroll-snap-type:x proximate;-webkit-overflow-scrolling:touch}
+.carousel-track .card{flex:0 0 168px;scroll-snap-align:start}
+.carousel-track .poster{height:235px}
+@media(max-width:580px){
+  .carousel-section{padding:1rem 1rem 0}
+  .carousel-track .card{flex:0 0 130px}
+  .carousel-track .poster{height:185px}
 }
 </style>
 </head>
@@ -156,6 +166,16 @@ footer span{color:var(--gold)}
   <div class="hbadge">🌟 Ultimate Telugu Cinema Hub</div>
   <h1>TFI CINEMA 🎬 SOUL</h1>
   <p>1,489 Telugu titles — live TMDB posters &amp; direct OTT links for all 6 platforms.</p>
+</div>
+
+<div class="carousel-section">
+  <div class="carousel-label">🔥 Trending Now <span class="badge-new">LIVE</span></div>
+  <div class="carousel-track" id="POPCAR"></div>
+</div>
+
+<div class="carousel-section">
+  <div class="carousel-label">🆕 Latest Releases <span class="badge-new">NEW</span></div>
+  <div class="carousel-track" id="NEWCAR"></div>
 </div>
 
 <div class="filters">
@@ -239,6 +259,7 @@ const M=[{"slug":"junior","t":"Junior","y":2025,"d":"Radhakrishna Reddy","h":"Ki
 const TK='273b205f87479e19990c392922d056b6';
 const IB='https://image.tmdb.org/t/p/';
 const PC={};
+const PP={};
 
 let cF='all',cO=null,cS='',cSo='def';
 
@@ -258,8 +279,26 @@ async function getPoster(title,year,isTV){
     let res=d.results&&d.results[0];
     if(year>0&&d.results){const m=d.results.find(x=>(x.release_date||x.first_air_date||'').startsWith(String(year)));if(m)res=m;}
     PC[k]=res?.poster_path||null;
+    PP[k]=res?.popularity||0;
     return PC[k];
-  }catch(e){PC[k]=null;return null;}
+  }catch(e){PC[k]=null;PP[k]=0;return null;}
+}
+
+async function getTmdbPopularity(title,year,isTV){
+  const k=title+'|'+year;
+  if(PP[k]!==undefined)return PP[k];
+  try{
+    const t=isTV?'tv':'movie';
+    const q=encodeURIComponent(title);
+    const y=year>0?(isTV?`&first_air_date_year=${year}`:`&year=${year}`):'';
+    const r=await fetch(`https://api.themoviedb.org/3/search/${t}?api_key=${TK}&query=${q}${y}&language=en-US&include_adult=false`);
+    const d=await r.json();
+    let res=d.results&&d.results[0];
+    if(year>0&&d.results){const m=d.results.find(x=>(x.release_date||x.first_air_date||'').startsWith(String(year)));if(m)res=m;}
+    PP[k]=res?.popularity||0;
+    PC[k]=res?.poster_path||null;
+    return PP[k];
+  }catch(e){PP[k]=0;return 0;}
 }
 
 /* ── Card poster setup ─────────────────────────────────────────────────── */
@@ -381,6 +420,52 @@ function applyAll(){
   document.getElementById('RC').textContent=res.length;
   render(res);
 }
+
+function renderCarousel(containerId, movieList){
+  const el=document.getElementById(containerId);
+  el.innerHTML=movieList.map((m,i)=>`
+    <div class="card" data-idx="${i}">
+      <div class="poster" id="${containerId}_P${i}"></div>
+      <div class="cbody">
+        <div class="ct">${m.t}</div>
+        <div class="ch">🎭 <span>${m.h}</span></div>
+        <span class="cottag" style="background:${m.color}22;border:1px solid ${m.color}55;color:${m.color}">
+          <span style="width:6px;height:6px;border-radius:50%;background:${m.color}"></span>${m.ott}
+        </span>
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('.card').forEach((c,i)=>{
+    setupPoster(c.querySelector('.poster'), movieList[i]);
+    c.addEventListener('click',()=>openModal(movieList[i]));
+  });
+}
+
+// Trending Now: real TMDB popularity score, not just star rating
+// Pre-filter to a reasonable candidate pool (rating >= 5, recent-ish bias)
+// then fetch live TMDB popularity for that pool and sort by it.
+async function loadTrendingCarousel(){
+  const candidatePool = [...M]
+    .filter(m=>m.r>=5)
+    .sort((a,b)=>b.y-a.y) // bias toward more recent titles within the pool
+    .slice(0,70); // cap candidates to limit API calls
+
+  const withPopularity = await Promise.all(candidatePool.map(async m=>{
+    const pop = await getTmdbPopularity(m.t, m.y, m.tp==='Series');
+    return {movie:m, pop};
+  }));
+
+  const trending = withPopularity
+    .sort((a,b)=>b.pop-a.pop)
+    .slice(0,15)
+    .map(x=>x.movie);
+
+  renderCarousel('POPCAR', trending);
+}
+loadTrendingCarousel();
+
+// Latest Releases: most recent titles by year
+const latestMovies = [...M].filter(m=>m.y>0).sort((a,b)=>b.y-a.y).slice(0,15);
+renderCarousel('NEWCAR', latestMovies);
 
 function render(movies){
   const gr=document.getElementById('GR'),em=document.getElementById('EM');
