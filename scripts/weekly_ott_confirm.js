@@ -46,7 +46,8 @@ const PLATFORM_PATTERNS = [
 const BLOCKED_SOURCE_DOMAINS = [
   'instagram.com', 'facebook.com', 'twitter.com', 'x.com',
   'tiktok.com', 'youtube.com', 'youtu.be', 'pinterest.com',
-  'threads.net', 'reddit.com',
+  'threads.net', 'threads.com', 'reddit.com', 'telegram.org', 't.me',
+  'whatsapp.com', 'snapchat.com', 'linkedin.com', 'quora.com',
 ];
 
 function isTrustedSource(url) {
