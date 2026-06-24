@@ -1,0 +1,29 @@
+name: Daily OTT Platform Confirmation
+
+on:
+  schedule:
+    # Runs daily at 4:00 AM UTC = 9:30 AM IST
+    - cron: '0 4 * * *'
+  workflow_dispatch: {}  # allows manual "Run workflow" button in GitHub UI too
+
+jobs:
+  confirm-ott-platforms:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install @supabase/supabase-js
+
+      - name: Run weekly OTT confirmation check
+        env:
+          SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: node scripts/weekly_ott_confirm.js
