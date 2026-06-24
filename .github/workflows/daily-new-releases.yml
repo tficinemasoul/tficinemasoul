@@ -1,0 +1,29 @@
+name: Daily New Release Check
+
+on:
+  schedule:
+    # Runs at 3:00 AM UTC = 8:30 AM IST every day
+    - cron: '0 3 * * *'
+  workflow_dispatch: {}  # allows manual "Run workflow" button in GitHub UI too
+
+jobs:
+  check-new-releases:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install @supabase/supabase-js
+
+      - name: Run daily new release check
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: node scripts/daily_new_releases.js
