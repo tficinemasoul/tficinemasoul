@@ -38,6 +38,27 @@ const PLATFORM_PATTERNS = [
   { name: 'SonyLIV', patterns: ['sonyliv', 'sony liv'] },
 ];
 
+// Domains we trust enough to accept as confirmation. Social media posts
+// (Instagram, Facebook, Twitter/X, TikTok, YouTube Shorts captions) are
+// EXCLUDED on purpose — captions are frequently wrong, outdated, or
+// about a same-named film in a different language/region, and we'd
+// rather stay "Pending Review" than publish a wrong Watch Now link.
+const BLOCKED_SOURCE_DOMAINS = [
+  'instagram.com', 'facebook.com', 'twitter.com', 'x.com',
+  'tiktok.com', 'youtube.com', 'youtu.be', 'pinterest.com',
+  'threads.net', 'reddit.com',
+];
+
+function isTrustedSource(url) {
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    return !BLOCKED_SOURCE_DOMAINS.some(blocked => host.includes(blocked));
+  } catch (e) {
+    return false; // malformed URL — don't trust it
+  }
+}
+
 function normalizeName(s) {
   return String(s || '').toLowerCase().replace(/[.,]/g, '').trim().replace(/\s+/g, ' ');
 }
@@ -83,6 +104,10 @@ function findConfidentMatch(searchResults, movieTitle) {
   ];
 
   for (const item of allItems) {
+    // Reject social-media sources outright before checking anything else —
+    // captions are not reliable enough to publish as fact on our site.
+    if (!isTrustedSource(item.link)) continue;
+
     const text = normalizeName(`${item.title || ''} ${item.snippet || ''}`);
 
     // Require most of the title's significant words to appear —
