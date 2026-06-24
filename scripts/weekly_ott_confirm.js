@@ -108,18 +108,44 @@ function findConfidentMatch(searchResults, movieTitle) {
     // captions are not reliable enough to publish as fact on our site.
     if (!isTrustedSource(item.link)) continue;
 
-    const text = normalizeName(`${item.title || ''} ${item.snippet || ''}`);
+    const rawText = `${item.title || ''}. ${item.snippet || ''}`;
+    const rawSentences = rawText.split(/(?<=[.!?])\s+|\n+/);
+    const sentences = rawSentences.map(s => normalizeName(s));
 
-    // Require most of the title's significant words to appear —
-    // avoids matching a generic article that just happens to mention a platform.
-    const titleWordsPresent = titleWords.filter(w => text.includes(w)).length;
-    const titleMatchRatio = titleWords.length > 0 ? titleWordsPresent / titleWords.length : 0;
-    if (titleMatchRatio < 0.7) continue;
+    // FORWARD-ONLY, FIRST-PLATFORM-WINS, AMBIGUITY-AWARE MATCHING:
+    // Multi-movie listicle pages give each film its own short paragraph,
+    // e.g. "Title... released in theaters... rights acquired by Platform."
+    // The platform mention typically comes AFTER the title mention, within
+    // the next couple of sentences, and before the article moves on to
+    // describe the next film. We search forward from the title's sentence
+    // only (never backward, which is what let a PRECEDING movie's platform
+    // leak into a later movie's result). If we encounter MORE THAN ONE
+    // distinct platform before settling on one, we treat it as ambiguous
+    // and reject the match — better to stay "Pending Review" than guess
+    // between two candidates.
+    const FORWARD_WINDOW = 3; // sentences to look ahead, including the title's own sentence
 
-    for (const platform of PLATFORM_PATTERNS) {
-      if (platform.patterns.some(p => text.includes(p))) {
-        return { platform: platform.name, source: item.link || item.title, snippet: item.snippet };
+    for (let i = 0; i < sentences.length; i++) {
+      const segWords = sentences[i].split(' ');
+      const titleWordsPresent = titleWords.filter(w => segWords.includes(w)).length;
+      const titleMatchRatio = titleWords.length > 0 ? titleWordsPresent / titleWords.length : 0;
+      if (titleMatchRatio < 0.7) continue;
+
+      const windowEnd = Math.min(sentences.length, i + FORWARD_WINDOW + 1);
+      const windowText = sentences.slice(i, windowEnd).join(' ');
+
+      const platformsFound = new Set();
+      for (const platform of PLATFORM_PATTERNS) {
+        if (platform.patterns.some(p => windowText.includes(p))) {
+          platformsFound.add(platform.name);
+        }
       }
+
+      if (platformsFound.size === 1) {
+        return { platform: [...platformsFound][0], source: item.link || item.title, snippet: item.snippet };
+      }
+      // size === 0 -> no platform yet, try next title occurrence if any
+      // size > 1  -> ambiguous in this window, don't guess; try next title occurrence if any
     }
   }
   return null;
